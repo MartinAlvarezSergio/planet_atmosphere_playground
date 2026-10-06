@@ -1,0 +1,1022 @@
+:root {
+  font-family:
+    Inter,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  line-height: 1.45;
+  font-weight: 400;
+  color: #e5e2de;
+  background-color: #1b1c1f;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 15% 0%, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0) 35%),
+    radial-gradient(circle at 85% 100%, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0) 30%),
+    linear-gradient(180deg, #2a2b2f 0%, #1b1c1f 100%);
+  color: #e5e2de;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+input[type="text"],
+input[type="number"],
+select {
+  width: 100%;
+  margin-top: 0.35rem;
+  background: rgba(245, 243, 238, 0.14);
+  color: #ece9e4;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 9px;
+  padding: 0.42rem 0.55rem;
+}
+
+select option {
+  background: #2d2f33;
+  color: #ece9e4;
+}
+
+button {
+  background: rgba(240, 238, 235, 0.16);
+  color: #f1efec;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 10px;
+  padding: 0.5rem 0.88rem;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
+  backdrop-filter: blur(5px);
+}
+
+button:hover:not(:disabled) {
+  background: rgba(240, 238, 235, 0.24);
+  border-color: rgba(255, 255, 255, 0.38);
+  transform: translateY(-1px);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  background: rgba(140, 140, 145, 0.18);
+  border-color: rgba(200, 200, 206, 0.2);
+  opacity: 0.7;
+}
+
+input[type="range"] {
+  width: 100%;
+  margin-top: 0.4rem;
+}
+
+.app-shell {
+  max-width: 1220px;
+  margin: 0 auto;
+  padding: 1.2rem 1.5rem 1.5rem;
+  display: grid;
+  gap: 1.1rem;
+}
+
+.subtle {
+  color: #b7b4af;
+}
+
+.card {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 14px;
+  background: rgba(247, 245, 242, 0.08);
+  backdrop-filter: blur(6px);
+  padding: 1rem;
+}
+
+.modal {
+  margin-top: 1rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.modal-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  align-items: center;
+}
+
+.empty-state {
+  margin-top: 1rem;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.applet-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.selector-pill {
+  background: rgba(242, 239, 235, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.selector-pill.active {
+  background: rgba(255, 255, 255, 0.28);
+  border-color: rgba(255, 255, 255, 0.42);
+  color: #ffffff;
+}
+
+.gravity-layout {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 1rem;
+}
+
+.panel {
+  display: grid;
+  gap: 0.9rem;
+  align-content: start;
+}
+
+.panel label {
+  display: grid;
+}
+
+.slider-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.control-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem 0.8rem;
+}
+
+.control-span-2 {
+  grid-column: 1 / -1;
+}
+
+.control-section {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  padding: 0.7rem;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.section-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  letter-spacing: 0.02em;
+  color: #d3cdc5;
+}
+
+.cooling-warning {
+  font-size: 0.82rem;
+}
+
+.once-done-box > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.once-done-box > summary::before {
+  content: "▸";
+  color: #d3cdc5;
+  font-size: 0.95rem;
+  line-height: 1;
+  transform: translateY(-1px);
+  transition: transform 160ms ease;
+}
+
+.once-done-box[open] > summary::before {
+  transform: rotate(90deg) translateX(1px);
+}
+
+.once-done-box > summary::-webkit-details-marker {
+  display: none;
+}
+
+.once-done-body {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+
+.compare-target-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.compare-target-card {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  padding: 0.5rem;
+  background: rgba(255, 255, 255, 0.03);
+  display: grid;
+  gap: 0.45rem;
+  position: relative;
+  overflow: visible;
+}
+
+.compare-reference-image {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  transition:
+    transform 210ms ease,
+    box-shadow 210ms ease,
+    border-color 210ms ease;
+  transform-origin: center;
+  position: relative;
+  z-index: 0;
+}
+
+.compare-reference-image:hover {
+  transform: scale(1.5);
+  z-index: 20;
+  border-color: rgba(255, 255, 255, 0.5);
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.5);
+}
+
+.hover-help-tooltip {
+  position: fixed;
+  z-index: 2000;
+  max-width: min(340px, 70vw);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(2px);
+  transition:
+    opacity 90ms ease,
+    transform 90ms ease;
+  background: rgba(16, 18, 24, 0.95);
+  color: #efe9df;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 8px;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.84rem;
+  line-height: 1.35;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.45);
+  white-space: pre-wrap;
+}
+
+.hover-help-tooltip.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.schwarzschild-panel .schwarzschild-section {
+  margin-top: 1rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.schwarzschild-panel .schwarzschild-section:first-of-type {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+.schwarzschild-preset-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+}
+
+.schwarzschild-preset-grid button {
+  font-size: 0.8rem;
+  padding: 0.38rem 0.5rem;
+}
+
+.schwarzschild-guided-hint {
+  min-height: 1.35em;
+  font-size: 0.8rem;
+  color: #c9c4bc;
+  line-height: 1.4;
+}
+
+.schwarzschild-hints-body {
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: #c9c4bc;
+}
+
+.field-inline {
+  display: grid !important;
+  grid-template-columns: minmax(145px, 0.95fr) minmax(0, 1.05fr);
+  align-items: center;
+  column-gap: 0.7rem;
+}
+
+.field-inline > span {
+  color: #ddd7cf;
+}
+
+.field-inline > input,
+.field-inline > select {
+  margin-top: 0;
+}
+
+.checkbox {
+  display: flex !important;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.button-row {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.stats {
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.95rem;
+  color: #d8d3cd;
+}
+
+.spectrum-description {
+  text-align: justify;
+}
+
+.canvas-shell {
+  display: grid;
+  gap: 0.85rem;
+  align-content: start;
+}
+
+canvas {
+  width: 100%;
+  max-width: 900px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.run-captures {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.run-capture-card {
+  margin: 0;
+  padding: 0.55rem;
+  position: relative;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.04);
+  display: grid;
+  gap: 0.45rem;
+}
+
+.run-capture-card-wide {
+  grid-column: 1 / -1;
+}
+
+.run-capture-delete {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  z-index: 12;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  background: rgba(18, 20, 26, 0.7);
+  color: #f3ede5;
+  font-size: 0.78rem;
+  line-height: 1;
+  padding: 0;
+  display: grid;
+  place-items: center;
+}
+
+.run-capture-delete:hover:not(:disabled) {
+  background: rgba(48, 20, 20, 0.85);
+  border-color: rgba(255, 180, 180, 0.8);
+}
+
+.run-capture-card img {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.run-capture-visuals {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  overflow: visible;
+}
+
+.run-capture-visuals img {
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    border-color 180ms ease;
+  transform-origin: center;
+  position: relative;
+  z-index: 0;
+}
+
+.run-capture-visuals img:hover {
+  transform: scale(1.35);
+  z-index: 4;
+  border-color: rgba(255, 255, 255, 0.45);
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.45);
+}
+
+.run-capture-card figcaption {
+  color: #ddd7cf;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 1080px) {
+  .gravity-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .run-captures {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .control-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .field-inline {
+    grid-template-columns: 1fr;
+    row-gap: 0.35rem;
+  }
+
+  .run-captures {
+    grid-template-columns: 1fr;
+  }
+
+  .run-capture-visuals {
+    grid-template-columns: 1fr;
+  }
+
+  .compare-target-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Applet stage (src/ui/stage): full-bleed experiment with translucent overlay panels.
+   The stage is dark in both themes, so overlay colours are fixed rather than theme tokens.
+   AppletStage sets --stage-w / --stage-h (the canvas's logical size) on .stage-root. */
+.stage-root {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.stage {
+  position: relative;
+  width: min(100%, calc((100vh - 9rem) * var(--stage-w, 880) / var(--stage-h, 600)));
+  min-width: min(100%, 680px);
+  margin: 0 auto;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #060a12;
+  color: #ebe8e2;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.stage-canvas-wrap {
+  position: relative;
+}
+
+/* Undo the global canvas card styling (900px cap, border) inside the stage. */
+.stage canvas {
+  max-width: none;
+  border: 0;
+  border-radius: 0;
+}
+
+.stage-scene {
+  display: block;
+  width: 100%;
+  aspect-ratio: var(--stage-w, 880) / var(--stage-h, 600);
+}
+
+.stage.is-fullscreen {
+  width: 100vw;
+  height: 100vh;
+  min-width: 0;
+  border-radius: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stage.is-fullscreen .stage-scene {
+  width: min(100vw, calc(100vh * var(--stage-w, 880) / var(--stage-h, 600)));
+}
+
+.stage-glass {
+  position: absolute;
+  background: rgba(12, 17, 27, 0.58);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+
+.stage-topbar {
+  top: 12px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px;
+}
+
+.stage-controls {
+  top: 62px;
+  left: 12px;
+  width: var(--stage-controls-w, 240px);
+  max-height: calc(100% - 74px);
+  overflow-y: auto;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: 12px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+}
+
+.stage-readouts {
+  top: 12px;
+  right: 12px;
+  min-width: 168px;
+  max-width: 260px;
+  padding: 10px 12px;
+  display: grid;
+  gap: 3px;
+}
+
+.stage-inset {
+  right: 12px;
+  bottom: 12px;
+  padding: 6px 6px 2px;
+}
+
+.stage-inset-left {
+  right: auto;
+  left: 12px;
+  bottom: 36px;
+}
+
+.stage-inset canvas {
+  display: block;
+}
+
+.stage-info {
+  top: 62px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(440px, calc(100% - 24px));
+  max-height: calc(100% - 80px);
+  overflow: auto;
+  padding: 14px 16px 6px;
+}
+
+.stage-info h4 {
+  margin: 0 0 4px;
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+  color: #ffffff;
+}
+
+.stage-info ul {
+  margin: 0 0 10px;
+  padding-left: 1.05rem;
+  color: rgba(235, 232, 226, 0.85);
+}
+
+.stage-info-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+:root .stage button {
+  background: rgba(255, 255, 255, 0.07);
+  color: #ebe8e2;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 0.28rem 0.6rem;
+  font-size: 0.8rem;
+  line-height: 1.2;
+  backdrop-filter: none;
+}
+
+:root .stage button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: transparent;
+  transform: none;
+}
+
+:root .stage button[aria-pressed="true"] {
+  background: rgba(120, 190, 255, 0.24);
+  border-color: rgba(140, 200, 255, 0.5);
+  color: #ffffff;
+}
+
+:root .stage button:focus-visible,
+:root .stage select:focus-visible,
+:root .stage input:focus-visible {
+  outline: 2px solid #9fd0ff;
+  outline-offset: 1px;
+}
+
+:root .stage button:disabled,
+:root .stage select:disabled,
+:root .stage input:disabled {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: transparent;
+  color: rgba(235, 232, 226, 0.55);
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+:root .stage .stage-icon {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+}
+
+:root .stage .stage-pill {
+  border-radius: 999px;
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+/* Pills wrap inside the controls panel (labels stay word-for-word) but not in the top bar
+   or the small comparison cards. */
+.stage-topbar .stage-pill,
+.compare-target-card .stage-pill {
+  white-space: nowrap;
+}
+
+:root .stage select,
+:root .stage input[type="text"],
+:root .stage input[type="number"] {
+  width: 100%;
+  margin: 0;
+  padding: 0.3rem 0.5rem;
+  background: rgba(255, 255, 255, 0.06);
+  color: #ebe8e2;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  font-size: 0.8rem;
+}
+
+:root .stage input[type="range"] {
+  width: 100%;
+  margin: 0;
+  accent-color: #9fd0ff;
+}
+
+.stage-seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.stage-divider {
+  width: 1px;
+  height: 20px;
+  margin: 0 3px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.stage-field {
+  display: grid;
+  gap: 4px;
+}
+
+.stage-field-inline {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  color: rgba(235, 232, 226, 0.78);
+}
+
+.stage-field-head,
+.stage-readout,
+.stage-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  color: rgba(235, 232, 226, 0.78);
+}
+
+/* A long value drops under its label instead of squeezing it. */
+.stage-field-head {
+  flex-wrap: wrap;
+}
+
+.stage-field-head strong {
+  margin-left: auto;
+}
+
+.stage-field-head strong,
+.stage-readout strong,
+.stage-hero strong {
+  color: #ffffff;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.stage-hero {
+  margin-bottom: 4px;
+}
+
+.stage-hero strong {
+  font-size: 1.9rem;
+  line-height: 1;
+}
+
+.stage-readout.is-muted {
+  opacity: 0.6;
+}
+
+.stage-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.stage-section + .stage-section,
+.stage-field + .stage-section,
+.stage-pills + .stage-section {
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.stage-section > summary {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.7rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: rgba(235, 232, 226, 0.6);
+}
+
+.stage-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+.stage-section > summary::after {
+  content: "\25BE";
+}
+
+.stage-section:not([open]) > summary {
+  margin-bottom: 0;
+}
+
+.stage-section:not([open]) > summary::after {
+  content: "\25B8";
+}
+
+.stage-section-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+
+.stage-presets {
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+:root .stage .stage-play {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 72px;
+  height: 72px;
+  padding: 0;
+  transform: translate(-50%, -50%);
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(12, 17, 27, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  backdrop-filter: blur(8px);
+}
+
+:root .stage .stage-play:hover:not(:disabled) {
+  background: rgba(30, 42, 62, 0.72);
+  transform: translate(-50%, -50%) scale(1.05);
+}
+
+.stage-play svg {
+  width: 30px;
+  height: 30px;
+  margin-left: 4px;
+}
+
+.stage-below {
+  width: min(100%, calc((100vh - 9rem) * var(--stage-w, 880) / var(--stage-h, 600)));
+  min-width: min(100%, 680px);
+  margin: 0 auto;
+}
+
+/* Stage tooltips attach to <body> (see useHoverHelp); size to content up to the max width. */
+.hover-help-tooltip.stage-tooltip {
+  width: max-content;
+}
+
+.stage-select-bare select {
+  width: auto;
+  max-width: 220px;
+}
+
+/* Light surface (AppletStage surface="light"), for canvases that follow the light theme. */
+.stage.is-light {
+  background: #eef2f7;
+  color: #172235;
+}
+
+.stage.is-light .stage-glass {
+  background: rgba(255, 255, 255, 0.74);
+  border-color: rgba(28, 48, 76, 0.16);
+  box-shadow: 0 8px 24px rgba(25, 43, 68, 0.14);
+}
+
+:root .stage.is-light button {
+  background: rgba(28, 48, 76, 0.06);
+  color: #172235;
+}
+
+:root .stage.is-light button:hover:not(:disabled) {
+  background: rgba(28, 48, 76, 0.12);
+}
+
+:root .stage.is-light button[aria-pressed="true"] {
+  background: rgba(53, 111, 168, 0.18);
+  border-color: rgba(53, 111, 168, 0.5);
+  color: #11335a;
+}
+
+:root .stage.is-light button:disabled,
+:root .stage.is-light select:disabled,
+:root .stage.is-light input:disabled {
+  background: rgba(28, 48, 76, 0.04);
+  color: rgba(23, 34, 53, 0.5);
+}
+
+:root .stage.is-light .stage-pill {
+  border-color: rgba(28, 48, 76, 0.18);
+}
+
+:root .stage.is-light .stage-play {
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(28, 48, 76, 0.25);
+  color: #172235;
+}
+
+:root .stage.is-light select,
+:root .stage.is-light input[type="text"],
+:root .stage.is-light input[type="number"] {
+  background: rgba(255, 255, 255, 0.85);
+  color: #172235;
+  border-color: rgba(28, 48, 76, 0.2);
+}
+
+:root .stage.is-light input[type="range"] {
+  accent-color: #276ba6;
+}
+
+.stage.is-light .stage-field-head,
+.stage.is-light .stage-field-inline,
+.stage.is-light .stage-readout,
+.stage.is-light .stage-hero {
+  color: rgba(23, 34, 53, 0.72);
+}
+
+.stage.is-light .stage-field-head strong,
+.stage.is-light .stage-readout strong,
+.stage.is-light .stage-hero strong,
+.stage.is-light .stage-info h4 {
+  color: #0f1b2d;
+}
+
+.stage.is-light .stage-info ul {
+  color: rgba(23, 34, 53, 0.85);
+}
+
+.stage.is-light .stage-section > summary {
+  color: rgba(23, 34, 53, 0.55);
+}
+
+.stage.is-light .stage-seg {
+  background: rgba(28, 48, 76, 0.06);
+}
+
+.stage.is-light .stage-divider {
+  background: rgba(28, 48, 76, 0.16);
+}
+
+.stage.is-light .stage-section + .stage-section,
+.stage.is-light .stage-field + .stage-section,
+.stage.is-light .stage-pills + .stage-section,
+.stage.is-light .stage-presets {
+  border-top-color: rgba(28, 48, 76, 0.12);
+}
+
+/* Small screens: the overlays drop below the experiment instead of covering it. */
+@media (max-width: 760px) {
+  .stage {
+    width: 100%;
+    min-width: 0;
+    display: grid;
+    gap: 8px;
+    overflow: visible;
+    background: transparent;
+  }
+
+  .stage-scene {
+    border-radius: 12px;
+  }
+
+  .stage-glass {
+    position: static;
+    transform: none;
+    width: auto;
+    max-width: none;
+    max-height: none;
+    background: #0c111b;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .stage.is-light .stage-glass {
+    background: #ffffff;
+  }
+
+  /* Keep the close button inside the info panel once it is in the page flow. */
+  .stage-info {
+    position: relative;
+    left: auto;
+    top: auto;
+  }
+
+  .stage-topbar {
+    order: -1;
+    flex-wrap: wrap;
+  }
+
+  .stage-inset canvas {
+    width: 100% !important;
+    height: auto !important;
+  }
+
+  .stage-below {
+    width: 100%;
+    min-width: 0;
+  }
+}
