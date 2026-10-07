@@ -27,9 +27,19 @@ import {
   PLANET_PRESETS,
   TEMPERATURE_DEFAULT,
   TEMPERATURE_MAX,
-  TEMPERATURE_MIN
+  TEMPERATURE_MIN,
+  WIND_PRESETS
 } from "./sim";
-import type { GasMode, GasSettings, GasStats, PlanetPresetId } from "./types";
+import type { GasMode, GasSettings, GasStats, PlanetPresetId, WindPresetId, WindSettings } from "./types";
+import {
+  FIELD_STRENGTH_MAX,
+  FIELD_STRENGTH_MIN,
+  WIND_DEFAULTS,
+  WIND_DENSITY_MAX,
+  WIND_DENSITY_MIN,
+  WIND_SPEED_MAX,
+  WIND_SPEED_MIN
+} from "./wind";
 
 type Props = {
   host?: AppletHostAdapter;
@@ -60,7 +70,14 @@ const TIP = {
   histogram:
     "How many particles have each speed; bars use the particle colours.\nLine: the spread expected at the measured temperature (Maxwell–Boltzmann).",
   histogramPlanet:
-    "Speeds of the gas near the ground; bars use the particle colours.\nLine: the spread expected at the measured temperature.\nShaded: faster than escape speed."
+    "Speeds of the gas near the ground; bars use the particle colours.\nLine: the spread expected at the measured temperature.\nShaded: faster than escape speed.",
+  solarWind: "A stream of fast, light, charged particles from the Sun, arriving from the left.",
+  windSpeed: "Speed of the incoming wind, in the same units as the escape speed.",
+  windDensity: "How much wind arrives (number of wind particles).",
+  field: "The planet's magnetic field. It steers the charged wind; the neutral gas ignores it.",
+  fieldStrength: "Stronger field → the wind turns away farther from the planet.",
+  evaporated: "Escaped without being hit by the wind: heat alone.",
+  stripped: "Escaped after being hit by the solar wind (since it last touched the ground)."
 } as const;
 
 const PRESETS: { id: PlanetPresetId; label: string; tip: string }[] = [
@@ -68,6 +85,12 @@ const PRESETS: { id: PlanetPresetId; label: string; tip: string }[] = [
   { id: "small_planet", label: "Light", tip: "Light planet: mass 0.25×, temperature 1." },
   { id: "hot_gas", label: "Hot", tip: "Hot gas: mass 1×, temperature 2.6." },
   { id: "small_cold", label: "Cold", tip: "Light planet with cold gas: mass 0.3×, temperature 0.3." }
+];
+
+const WIND_PRESET_BUTTONS: { id: WindPresetId; label: string; tip: string }[] = [
+  { id: "mars", label: "Mars", tip: "Mars-like: lighter planet (0.8×), no magnetic field, solar wind on." },
+  { id: "earth", label: "Earth", tip: "Earth-like: heavy planet (2×) with a magnetic field, solar wind on." },
+  { id: "earth_no_field", label: "Earth, no field", tip: "The Earth-like planet with its magnetic field switched off." }
 ];
 
 const PLAYBACK_OPTIONS = [
@@ -101,6 +124,7 @@ export function PlanetAtmosphereCanvas({ host }: Props): JSX.Element {
   const [planetCount, setPlanetCount] = useState(PLANET_COUNT_DEFAULT);
   const [planetMass, setPlanetMass] = useState(PLANET_MASS_DEFAULT);
   const [warmGround, setWarmGround] = useState(false);
+  const [wind, setWind] = useState<WindSettings>(WIND_DEFAULTS);
   const [playback, setPlayback] = useState<number>(reducedMotion ? 0.5 : 1);
   const [running, setRunning] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -115,7 +139,8 @@ export function PlanetAtmosphereCanvas({ host }: Props): JSX.Element {
         temperature: TEMPERATURE_DEFAULT,
         count: BOX_COUNT_DEFAULT,
         planetMass: PLANET_MASS_DEFAULT,
-        warmGround: false
+        warmGround: false,
+        wind: WIND_DEFAULTS
       }),
     []
   );
@@ -123,7 +148,7 @@ export function PlanetAtmosphereCanvas({ host }: Props): JSX.Element {
   const planet = mode === "planet";
   const count = planet ? planetCount : boxCount;
   const limits = countLimits(mode);
-  const current: GasSettings = { mode, temperature, count, planetMass, warmGround };
+  const current: GasSettings = { mode, temperature, count, planetMass, warmGround, wind };
   const moving = running && !paused;
 
   useCanvasBackingStore([histRef]);
@@ -211,6 +236,21 @@ export function PlanetAtmosphereCanvas({ host }: Props): JSX.Element {
     sim.setWarmGround(on);
   }
 
+  function onWindChange(patch: Partial<WindSettings>): void {
+    const next = { ...wind, ...patch };
+    setWind(next);
+    sim.setWind(next);
+  }
+
+  function applyWindPreset(id: WindPresetId): void {
+    const preset = WIND_PRESETS[id];
+    setTemperature(preset.temperature);
+    setPlanetMass(preset.planetMass);
+    setWarmGround(preset.warmGround);
+    setWind(preset.wind);
+    sim.reset({ ...current, ...preset });
+  }
+
   function applyPreset(id: PlanetPresetId): void {
     const preset = PLANET_PRESETS[id];
     setTemperature(preset.temperature);
@@ -293,13 +333,62 @@ export function PlanetAtmosphereCanvas({ host }: Props): JSX.Element {
         {planet ? <StageToggle label="Warm ground" on={warmGround} tip={TIP.warmGround} onChange={onWarmGroundChange} /> : null}
         <StageToggle label="Follow" on={showTrail} tip={TIP.trail} onChange={setShowTrail} />
         {planet ? <StageToggle label="Gravity" on={showGravity} tip={TIP.gravity} onChange={setShowGravity} /> : null}
+        {planet ? <StageToggle label="Solar wind" on={wind.on} tip={TIP.solarWind} onChange={(on) => onWindChange({ on })} /> : null}
       </StagePills>
+      {planet && wind.on ? (
+        <>
+          <StageSlider
+            label="Wind speed"
+            display={wind.speed.toFixed(0)}
+            value={wind.speed}
+            min={WIND_SPEED_MIN}
+            max={WIND_SPEED_MAX}
+            step={1}
+            tip={TIP.windSpeed}
+            onChange={(speed) => onWindChange({ speed })}
+          />
+          <StageSlider
+            label="Wind density"
+            display={`${wind.density.toFixed(2)}×`}
+            value={wind.density}
+            min={WIND_DENSITY_MIN}
+            max={WIND_DENSITY_MAX}
+            step={0.05}
+            tip={TIP.windDensity}
+            onChange={(density) => onWindChange({ density })}
+          />
+        </>
+      ) : null}
       {planet ? (
-        <div className="stage-pills stage-presets">
-          {PRESETS.map((p) => (
-            <StagePillButton key={p.id} label={p.label} tip={p.tip} onClick={() => applyPreset(p.id)} />
-          ))}
-        </div>
+        <StagePills>
+          <StageToggle label="Magnetic field" on={wind.field} tip={TIP.field} onChange={(field) => onWindChange({ field })} />
+        </StagePills>
+      ) : null}
+      {planet && wind.field ? (
+        <StageSlider
+          label="Field strength"
+          display={`${wind.fieldStrength.toFixed(2)}×`}
+          value={wind.fieldStrength}
+          min={FIELD_STRENGTH_MIN}
+          max={FIELD_STRENGTH_MAX}
+          step={0.05}
+          tip={TIP.fieldStrength}
+          onChange={(fieldStrength) => onWindChange({ fieldStrength })}
+        />
+      ) : null}
+      {planet ? (
+        <>
+          <div className="stage-pills stage-presets">
+            {PRESETS.map((p) => (
+              <StagePillButton key={p.id} label={p.label} tip={p.tip} onClick={() => applyPreset(p.id)} />
+            ))}
+          </div>
+          <div className="stage-pills">
+            {WIND_PRESET_BUTTONS.map((p) => (
+              <StagePillButton key={p.id} label={p.label} tip={p.tip} onClick={() => applyWindPreset(p.id)} />
+            ))}
+          </div>
+        </>
       ) : null}
     </>
   );
@@ -310,7 +399,14 @@ export function PlanetAtmosphereCanvas({ host }: Props): JSX.Element {
         <>
           {/* Round down so a single escapee never reads as 100%. */}
           <StageHero label="Kept" value={`${Math.floor(stats.keptFraction * 100)}%`} tip={TIP.kept} />
-          <StageReadout label="Escaped" value={String(stats.escaped)} />
+          {wind.on || stats.stripped > 0 ? (
+            <>
+              <StageReadout label="Evaporated" value={String(stats.evaporated)} tip={TIP.evaporated} />
+              <StageReadout label="Stripped" value={String(stats.stripped)} tip={TIP.stripped} />
+            </>
+          ) : (
+            <StageReadout label="Escaped" value={String(stats.escaped)} />
+          )}
           <StageReadout label="Escape speed" value={stats.escapeSpeed.toFixed(2)} tip={TIP.escapeSpeed} />
           <StageReadout label="Avg speed" value={stats.meanSpeed.toFixed(2)} tip={TIP.temperatureReadoutPlanet} />
           <StageReadout label="Temperature" value={stats.temperature.toFixed(2)} tip={TIP.temperatureReadoutPlanet} />
@@ -364,10 +460,36 @@ export function PlanetAtmosphereCanvas({ host }: Props): JSX.Element {
           </ul>
         </>
       ) : null}
+      {planet ? (
+        <>
+          <h4>Solar wind</h4>
+          <ul>
+            <li>Violet streaks: wind particles, 10× lighter than the gas and much faster. A hit can knock a gas particle up and away.</li>
+            <li>
+              Magnetic field: we look down on the planet from above its pole, so the field points out of the screen. It turns the
+              charged wind aside; half the wind is positive and half negative, and the two curve opposite ways. The neutral gas
+              ignores it.
+            </li>
+            <li>Stripped counts gas lost after a wind hit; evaporated counts gas lost to heat alone.</li>
+          </ul>
+        </>
+      ) : null}
       <h4>Model</h4>
       <ul>
         <li>2D hard disks with elastic collisions; gravity from the planet only (the gas does not attract itself).</li>
         <li>Sizes, speeds and times are scaled for viewing; real planets lose gas far more slowly.</li>
+        {planet ? (
+          <>
+            <li>
+              Each wind particle is steered by the field on its own. In a real magnetosphere the wind also squeezes the field, into
+              a blunt nose on the Sun side and a long tail behind.
+            </li>
+            <li>
+              Knock-outs stand in for several ways the wind removes air. At Mars today most of the loss is gas that is ionised and
+              then swept away, which a neutral gas cannot show.
+            </li>
+          </>
+        ) : null}
       </ul>
     </>
   );

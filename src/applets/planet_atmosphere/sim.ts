@@ -1,4 +1,14 @@
-import type { GasMode, GasSettings, GasSnapshot, PlanetPresetId, TrailPoint } from "./types";
+import { gaussian, mulberry32 } from "./random";
+import type { GasMode, GasSettings, GasSnapshot, PlanetPresetId, TrailPoint, WindPresetId, WindSettings } from "./types";
+import {
+  createSolarWind,
+  shieldRadius,
+  WIND_DEFAULTS,
+  WIND_HIT_DISTANCE,
+  WIND_MASS,
+  WIND_PARTICLE_R,
+  WIND_TRAIL_INTERVAL
+} from "./wind";
 
 export const CANVAS_W = 880;
 export const CANVAS_H = 600;
@@ -43,6 +53,19 @@ export const PLANET_PRESETS: Record<PlanetPresetId, { temperature: number; plane
   small_planet: { temperature: 1, planetMass: 0.25 },
   hot_gas: { temperature: 2.6, planetMass: 1 },
   small_cold: { temperature: 0.3, planetMass: 0.3 }
+};
+
+/**
+ * Solar-wind presets. The warm ground keeps the gas at one temperature, so losses come from the wind;
+ * the Mars-like planet is heavy enough that heat alone loses almost nothing.
+ */
+export const WIND_PRESETS: Record<
+  WindPresetId,
+  { temperature: number; planetMass: number; warmGround: boolean; wind: WindSettings }
+> = {
+  mars: { temperature: 1, planetMass: 0.8, warmGround: true, wind: { ...WIND_DEFAULTS, on: true } },
+  earth: { temperature: 1, planetMass: 2, warmGround: true, wind: { ...WIND_DEFAULTS, on: true, field: true } },
+  earth_no_field: { temperature: 1, planetMass: 2, warmGround: true, wind: { ...WIND_DEFAULTS, on: true } }
 };
 
 /** Sim seconds per real second at 1× playback. */
@@ -90,23 +113,6 @@ export function jeansParameter(planetMass: number, temperature: number): number 
   return (GM_PER_MASS * planetMass) / (PLANET_R * temperature);
 }
 
-function mulberry32(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function gaussian(rand: () => number): number {
-  const u1 = 1 - rand();
-  const u2 = rand();
-  return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-}
-
 type Grid = {
   x0: number;
   y0: number;
@@ -132,6 +138,7 @@ export type GasSim = {
   setCount: (count: number) => void;
   setPlanetMass: (planetMass: number) => void;
   setWarmGround: (warmGround: boolean) => void;
+  setWind: (wind: WindSettings) => void;
   setPlayback: (playback: number) => void;
   getSnapshot: () => GasSnapshot;
 };
@@ -147,10 +154,16 @@ export function createGasSim(initial: GasSettings): GasSim {
   const measured = new Uint8Array(CAPACITY);
   const next = new Int32Array(CAPACITY);
   const cellOf = new Int32Array(CAPACITY);
+  /**
+   * 1 once a gas particle is hit by the solar wind; cleared when it touches the ground. Gas that the
+   * wind only warmed (through other gas) and that then escapes counts as evaporated: thermal escape.
+   */
+  const windHit = new Uint8Array(CAPACITY);
 
   // Cells must be at least one particle diameter wide for the 3×3 neighbour search.
   const boxGrid = makeGrid(BOX_W / 2, BOX_H / 2, 0.1);
   const planetGrid = makeGrid(VIEW_HALF_W, VIEW_HALF_H, 0.06);
+  const wind = createSolarWind({ halfW: VIEW_HALF_W, halfH: VIEW_HALF_H, planetR: PLANET_R });
 
   let settings: GasSettings = { ...initial };
   let r = particleRadiusFor(initial.mode);
@@ -160,7 +173,8 @@ export function createGasSim(initial: GasSettings): GasSim {
   let nextId = 0;
   let playback = 1;
   let simTime = 0;
-  let escaped = 0;
+  let evaporated = 0;
+  let stripped = 0;
   let tracerEscaped = false;
   let trail: TrailPoint[] = [];
   let wallImpulse = 0;
@@ -343,6 +357,7 @@ export function createGasSim(initial: GasSettings): GasSim {
     x[i] = px;
     y[i] = py;
     ids[i] = nextId++;
+    windHit[i] = 0;
     sampleVelocity(i, temperature);
     insertIntoGrid(activeGrid(), i);
   }
@@ -355,6 +370,7 @@ export function createGasSim(initial: GasSettings): GasSim {
       vx[i] = vx[last];
       vy[i] = vy[last];
       ids[i] = ids[last];
+      windHit[i] = windHit[last];
     }
     n--;
   }
@@ -438,6 +454,62 @@ export function createGasSim(initial: GasSettings): GasSim {
     }
   }
 
+  /**
+   * Wind particle (mass m) on gas particle (mass 1), elastic: along the line of centres the gas gains
+   * 2m/(1 + m) of the closing speed and the wind particle loses 2/(1 + m) of it. Uses the grid that
+   * collidePairs just built; wind particles never hit each other.
+   */
+  function collideWind(grid: Grid): void {
+    const D = WIND_HIT_DISTANCE;
+    const D2 = D * D;
+    const gasShare = (2 * WIND_MASS) / (1 + WIND_MASS);
+    const windShare = 2 / (1 + WIND_MASS);
+    const { nx, ny, head, x0, y0, cell } = grid;
+    const wx = wind.x;
+    const wy = wind.y;
+    const wvx = wind.vx;
+    const wvy = wind.vy;
+    for (let k = 0; k < wind.count; k++) {
+      if (!wind.near[k]) {
+        continue;
+      }
+      const cx = Math.floor((wx[k] - x0) / cell);
+      const cy = Math.floor((wy[k] - y0) / cell);
+      if (cx < 0 || cy < 0 || cx >= nx || cy >= ny) {
+        continue;
+      }
+      for (let yy = Math.max(0, cy - 1); yy <= Math.min(ny - 1, cy + 1); yy++) {
+        for (let xx = Math.max(0, cx - 1); xx <= Math.min(nx - 1, cx + 1); xx++) {
+          for (let j = head[yy * nx + xx]; j !== -1; j = next[j]) {
+            const dx = x[j] - wx[k];
+            const dy = y[j] - wy[k];
+            const d2 = dx * dx + dy * dy;
+            if (d2 >= D2 || d2 < 1e-18) {
+              continue;
+            }
+            const d = Math.sqrt(d2);
+            const ux = dx / d;
+            const uy = dy / d;
+            const vrel = (vx[j] - wvx[k]) * ux + (vy[j] - wvy[k]) * uy;
+            if (vrel < 0) {
+              wvx[k] += windShare * vrel * ux;
+              wvy[k] += windShare * vrel * uy;
+              vx[j] -= gasShare * vrel * ux;
+              vy[j] -= gasShare * vrel * uy;
+              windHit[j] = 1;
+            }
+            // Separate about the centre of mass: the light wind particle moves most.
+            const push = D - d;
+            wx[k] -= ux * push * (1 / (1 + WIND_MASS));
+            wy[k] -= uy * push * (1 / (1 + WIND_MASS));
+            x[j] += ux * push * (WIND_MASS / (1 + WIND_MASS));
+            y[j] += uy * push * (WIND_MASS / (1 + WIND_MASS));
+          }
+        }
+      }
+    }
+  }
+
   /** Specular walls; reflected momentum is summed to measure pressure. */
   function collideBoxWalls(): void {
     const hx = BOX_W / 2 - r;
@@ -506,6 +578,7 @@ export function createGasSim(initial: GasSettings): GasSim {
       const ux = px / d;
       const uy = py / d;
       const vn = vx[i] * ux + vy[i] * uy;
+      windHit[i] = 0;
       let nd = rr;
       if (vn < 0 && warm) {
         const vOut = sigma * Math.sqrt(-2 * Math.log(1 - rand()));
@@ -522,7 +595,10 @@ export function createGasSim(initial: GasSettings): GasSim {
     }
   }
 
-  /** Escaped = outside the frame, moving outward, with positive orbital energy (it never returns). */
+  /**
+   * Escaped = outside the frame, moving outward, with positive orbital energy (it never returns).
+   * Counted as stripped when the solar wind hit it since it last touched the ground.
+   */
   function removeEscaped(): void {
     for (let i = n - 1; i >= 0; i--) {
       const px = x[i];
@@ -542,21 +618,37 @@ export function createGasSim(initial: GasSettings): GasSim {
       if (ids[i] === TRACER_ID) {
         tracerEscaped = true;
       }
+      if (windHit[i]) {
+        stripped++;
+      } else {
+        evaporated++;
+      }
       removeAt(i);
-      escaped++;
     }
   }
 
   function substep(h: number): void {
     const planet = settings.mode === "planet";
+    const windy = planet && wind.count > 0;
     if (planet) {
       kick(h / 2);
     }
+    if (windy) {
+      wind.kick(h / 2, gm);
+      wind.drift(h);
+    }
     drift(h);
     collidePairs(planet ? planetGrid : boxGrid);
+    if (windy) {
+      collideWind(planetGrid);
+      wind.absorbAtGround();
+    }
     if (planet) {
       collideSurface();
       kick(h / 2);
+      if (windy) {
+        wind.kick(h / 2, gm);
+      }
       removeEscaped();
     } else {
       collideBoxWalls();
@@ -584,19 +676,22 @@ export function createGasSim(initial: GasSettings): GasSim {
   }
 
   function reset(next: GasSettings): void {
-    settings = { ...next, count: clampCount(next.mode, next.count) };
+    settings = { ...next, wind: { ...next.wind }, count: clampCount(next.mode, next.count) };
     r = particleRadiusFor(settings.mode);
     gm = GM_PER_MASS * settings.planetMass;
     rand = mulberry32(SEED);
     n = 0;
     nextId = 0;
     simTime = 0;
-    escaped = 0;
+    evaporated = 0;
+    stripped = 0;
     tracerEscaped = false;
     trail = [];
     wallImpulse = 0;
     windowTime = 0;
     pressure = null;
+    wind.clear();
+    wind.configure(settings.wind);
     rebuildGrid(activeGrid());
     for (let k = 0; k < settings.count; k++) {
       addParticle(settings.temperature);
@@ -616,7 +711,10 @@ export function createGasSim(initial: GasSettings): GasSim {
       if (dt <= 0) {
         return;
       }
-      if (n > 0) {
+      const planet = settings.mode === "planet";
+      // Wind particles far from the frame are advanced here; the substeps move the rest.
+      const windSpeedMax = planet ? wind.beginFrame(dt, gm, rand) : 0;
+      if (n > 0 || windSpeedMax > 0) {
         let v2max = 0;
         let v2sum = 0;
         for (let i = 0; i < n; i++) {
@@ -625,9 +723,9 @@ export function createGasSim(initial: GasSettings): GasSim {
           v2sum += v2;
         }
         // A falling particle can gain up to g·dt during this frame.
-        const g = settings.mode === "planet" ? gm / (PLANET_R * PLANET_R) : 0;
-        const vmax = Math.sqrt(v2max) + g * dt;
-        const vrms = Math.sqrt(v2sum / n);
+        const g = planet ? gm / (PLANET_R * PLANET_R) : 0;
+        const vmax = Math.max(Math.sqrt(v2max) + g * dt, windSpeedMax);
+        const vrms = n > 0 ? Math.sqrt(v2sum / n) : 1;
         const nSub = Math.min(
           MAX_SUBSTEPS,
           Math.max(
@@ -637,9 +735,17 @@ export function createGasSim(initial: GasSettings): GasSim {
           )
         );
         const h = dt / nSub;
+        // Wind trails get a point every WIND_TRAIL_INTERVAL, spread evenly over the substeps.
+        const trailPoints = windSpeedMax > 0 ? Math.max(1, Math.round(dt / WIND_TRAIL_INTERVAL)) : 0;
         for (let s = 0; s < nSub; s++) {
           substep(h);
+          if (Math.floor(((s + 1) * trailPoints) / nSub) > Math.floor((s * trailPoints) / nSub)) {
+            wind.recordTrails();
+          }
         }
+      }
+      if (planet) {
+        wind.endFrame(dt);
       }
       simTime += dt;
 
@@ -696,6 +802,11 @@ export function createGasSim(initial: GasSettings): GasSim {
       settings.warmGround = warmGround;
     },
 
+    setWind(next: WindSettings): void {
+      settings.wind = { ...next };
+      wind.configure(settings.wind);
+    },
+
     setPlayback(value: number): void {
       playback = value;
     },
@@ -731,6 +842,21 @@ export function createGasSim(initial: GasSettings): GasSim {
         planetRadius: PLANET_R,
         planetMass: settings.planetMass,
         gm,
+        wind: {
+          count: planet ? wind.count : 0,
+          x: wind.x,
+          y: wind.y,
+          vx: wind.vx,
+          vy: wind.vy,
+          trailX: wind.trailX,
+          trailY: wind.trailY,
+          trailLength: wind.trailLength,
+          particleRadius: WIND_PARTICLE_R,
+          on: planet && settings.wind.on,
+          field: planet && settings.wind.field,
+          fieldStrength: settings.wind.fieldStrength,
+          shieldRadius: planet ? shieldRadius(settings.wind, PLANET_R) : 0
+        },
         stats: {
           simTime,
           temperature: smoothTemperature,
@@ -738,8 +864,10 @@ export function createGasSim(initial: GasSettings): GasSim {
           measuredCount,
           visibleCount: visible,
           pressure: settings.mode === "box" ? pressure : null,
-          escaped,
-          keptFraction: n + escaped > 0 ? n / (n + escaped) : 1,
+          escaped: evaporated + stripped,
+          evaporated,
+          stripped,
+          keptFraction: n + evaporated + stripped > 0 ? n / (n + evaporated + stripped) : 1,
           escapeSpeed: Math.sqrt((2 * gm) / PLANET_R)
         }
       };

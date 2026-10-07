@@ -2,6 +2,20 @@ export type GasMode = "box" | "planet";
 
 export type PlanetPresetId = "big_planet" | "small_planet" | "hot_gas" | "small_cold";
 
+export type WindPresetId = "mars" | "earth" | "earth_no_field";
+
+/** Planet mode only. Speeds are in the same units as the gas speeds and the escape speed. */
+export type WindSettings = {
+  on: boolean;
+  speed: number;
+  /** Relative to the default stream. */
+  density: number;
+  /** The planet's dipole field, which steers the charged wind and not the neutral gas. */
+  field: boolean;
+  /** Relative to the default field. */
+  fieldStrength: number;
+};
+
 /**
  * Sim units: particle mass m = 1 and k_B = 1, so in 2D the temperature is the
  * mean kinetic energy per particle, T = <v²>/2, and the most probable speed is √T.
@@ -17,6 +31,7 @@ export type GasSettings = {
    * `temperature` (a sun-warmed ground); when false it reflects them elastically.
    */
   warmGround: boolean;
+  wind: WindSettings;
 };
 
 export type GasStats = {
@@ -33,7 +48,12 @@ export type GasStats = {
   visibleCount: number;
   /** Box mode: measured wall force per unit length; null until enough hits are averaged. */
   pressure: number | null;
+  /** evaporated + stripped. */
   escaped: number;
+  /** Escaped without a solar-wind hit since last touching the ground: heat alone. */
+  evaporated: number;
+  /** Escaped after a solar-wind hit since last touching the ground. */
+  stripped: number;
   /** Bound particles / (bound + escaped). */
   keptFraction: number;
   /** Escape speed from the planet surface (planet mode). */
@@ -60,5 +80,25 @@ export type GasSnapshot = {
   planetRadius: number;
   planetMass: number;
   gm: number;
+  wind: WindSnapshot;
   stats: GasStats;
+};
+
+/** Solar-wind particles, including those still far upstream and outside the frame. */
+export type WindSnapshot = {
+  count: number;
+  x: Float64Array;
+  y: Float64Array;
+  vx: Float64Array;
+  vy: Float64Array;
+  /** Recent positions, newest first, WIND_TRAIL_POINTS per particle; trailLength[i] are valid. */
+  trailX: Float32Array;
+  trailY: Float32Array;
+  trailLength: Uint8Array;
+  particleRadius: number;
+  on: boolean;
+  field: boolean;
+  fieldStrength: number;
+  /** No incoming charge gets closer than this to the planet's centre (0 with the field off). */
+  shieldRadius: number;
 };

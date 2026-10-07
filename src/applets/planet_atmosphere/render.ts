@@ -1,6 +1,7 @@
 import { setLogicalTransform } from "../../core/canvasScale";
 import { BOX_H, BOX_W, CANVAS_H, CANVAS_W, NEAR_GROUND_R, PX_PER_UNIT } from "./sim";
 import type { GasSnapshot } from "./types";
+import { WIND_TRAIL_POINTS } from "./wind";
 
 /** Logical size of the histogram overlay (CSS pixels); the backing store follows devicePixelRatio. */
 export const HIST_W = 300;
@@ -29,6 +30,11 @@ const ESCAPE = "#66d9ff";
 const ESCAPE_WASH = "rgba(102, 217, 255, 0.1)";
 const WALL = "rgba(222, 216, 204, 0.75)";
 const GRAVITY = "rgba(150, 178, 210, 0.55)";
+/** Solar wind: a hue apart from the warm speed ramp, the cyan escape ring and the white tracer. */
+const WIND = "#b9a2ff";
+const WIND_RGB = "185, 162, 255";
+const WIND_TAIL = `rgba(${WIND_RGB}, 0.45)`;
+const FIELD_RGB = "110, 150, 255";
 const FONT_SMALL = "11px system-ui, sans-serif";
 
 function hexToRgb(hex: string): [number, number, number] {
@@ -115,6 +121,68 @@ function drawGravityArrows(ctx: CanvasRenderingContext2D, snap: GasSnapshot): vo
     const uy = -Math.sin(ang);
     drawArrow(ctx, cx + ux * ringR, cy + uy * ringR, -ux * len, -uy * len, GRAVITY);
   }
+}
+
+/** Glow ∝ field strength, which falls off as 1/r³; it fades to nothing well outside the shielded radius. */
+function drawField(ctx: CanvasRenderingContext2D, snap: GasSnapshot): void {
+  const shield = snap.wind.shieldRadius;
+  const R = snap.planetRadius;
+  const outer = Math.max(2.6 * shield, 1.5 * R);
+  const cx = toPx(0);
+  const cy = toPy(0);
+  const g = ctx.createRadialGradient(cx, cy, R * PX_PER_UNIT, cx, cy, outer * PX_PER_UNIT);
+  const stops = 12;
+  for (let k = 0; k <= stops; k++) {
+    const rad = R + ((outer - R) * k) / stops;
+    const a = k === stops ? 0 : 0.32 * Math.min(1, 0.5 * (shield / rad) ** 3);
+    g.addColorStop(k / stops, `rgba(${FIELD_RGB}, ${a.toFixed(3)})`);
+  }
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(cx, cy, outer * PX_PER_UNIT, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+/** Each wind particle trails its actual recent path, fading with age, so the flow's curves show. */
+function drawWind(ctx: CanvasRenderingContext2D, snap: GasSnapshot): void {
+  const w = snap.wind;
+  const rpx = Math.max(1.6, w.particleRadius * PX_PER_UNIT);
+  const margin = 240;
+  const inView = (px: number, py: number): boolean =>
+    px > -margin && py > -margin && px < CANVAS_W + margin && py < CANVAS_H + margin;
+  ctx.lineWidth = 1.6;
+  ctx.lineCap = "round";
+  // One path per trail segment age: the newest segment is the most opaque.
+  for (let k = 0; k < WIND_TRAIL_POINTS - 1; k++) {
+    ctx.strokeStyle = `rgba(${WIND_RGB}, ${(0.7 * (1 - k / (WIND_TRAIL_POINTS - 1))).toFixed(3)})`;
+    ctx.beginPath();
+    for (let i = 0; i < w.count; i++) {
+      if (w.trailLength[i] < k + 2) {
+        continue;
+      }
+      const base = i * WIND_TRAIL_POINTS + k;
+      const ax = toPx(k === 0 ? w.x[i] : w.trailX[base]);
+      const ay = toPy(k === 0 ? w.y[i] : w.trailY[base]);
+      if (!inView(ax, ay)) {
+        continue;
+      }
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(toPx(w.trailX[base + 1]), toPy(w.trailY[base + 1]));
+    }
+    ctx.stroke();
+  }
+  ctx.fillStyle = WIND;
+  ctx.beginPath();
+  for (let i = 0; i < w.count; i++) {
+    const px = toPx(w.x[i]);
+    const py = toPy(w.y[i]);
+    if (!inView(px, py)) {
+      continue;
+    }
+    ctx.moveTo(px + rpx, py);
+    ctx.arc(px, py, rpx, 0, Math.PI * 2);
+  }
+  ctx.fill();
 }
 
 function drawPlanet(ctx: CanvasRenderingContext2D, snap: GasSnapshot): void {
@@ -222,7 +290,10 @@ function drawTracer(ctx: CanvasRenderingContext2D, snap: GasSnapshot): void {
   ctx.stroke();
 }
 
-/** Bottom-left key: speed colours, plus the ring markers that are currently in use. */
+/** Right edge for the bottom-left key; past it the key starts a second row, clear of the histogram card. */
+const LEGEND_RIGHT = 560;
+
+/** Bottom-left key: speed colours, plus the markers that are currently in use. */
 function drawLegend(ctx: CanvasRenderingContext2D, snap: GasSnapshot, showTrail: boolean): void {
   const y = CANVAS_H - 12;
   let x = 16;
@@ -243,21 +314,67 @@ function drawLegend(ctx: CanvasRenderingContext2D, snap: GasSnapshot, showTrail:
   ctx.fillText("fast", x, y);
   x += ctx.measureText("fast").width + 18;
 
-  const ringKey = (color: string, label: string): void => {
+  const keys: { label: string; draw: (kx: number, ky: number) => void }[] = [];
+  const ring = (color: string) => (kx: number, ky: number): void => {
     ctx.strokeStyle = color;
     ctx.lineWidth = 1.4;
     ctx.beginPath();
-    ctx.arc(x + 5, y, 5, 0, Math.PI * 2);
+    ctx.arc(kx + 5, ky, 5, 0, Math.PI * 2);
     ctx.stroke();
-    ctx.fillStyle = TEXT_MUTED;
-    ctx.fillText(label, x + 15, y);
-    x += 15 + ctx.measureText(label).width + 18;
   };
   if (snap.mode === "planet") {
-    ringKey(ESCAPE, "faster than escape speed");
+    keys.push({ label: "faster than escape speed", draw: ring(ESCAPE) });
   }
   if (showTrail) {
-    ringKey("#ffffff", snap.tracerEscaped ? "followed (escaped)" : "followed");
+    keys.push({ label: snap.tracerEscaped ? "followed (escaped)" : "followed", draw: ring("#ffffff") });
+  }
+  if (snap.wind.on || snap.wind.count > 0) {
+    keys.push({
+      label: "solar wind",
+      draw: (kx, ky) => {
+        ctx.strokeStyle = WIND_TAIL;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(kx - 4, ky);
+        ctx.lineTo(kx + 8, ky);
+        ctx.stroke();
+        ctx.fillStyle = WIND;
+        ctx.beginPath();
+        ctx.arc(kx + 9, ky, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+  }
+  if (snap.wind.field) {
+    keys.push({
+      label: "magnetic field",
+      draw: (kx, ky) => {
+        const g = ctx.createRadialGradient(kx + 5, ky, 0, kx + 5, ky, 7);
+        g.addColorStop(0, `rgba(${FIELD_RGB}, 0.7)`);
+        g.addColorStop(1, `rgba(${FIELD_RGB}, 0)`);
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(kx + 5, ky, 7, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+  }
+  // A key that would run into the histogram card starts a new row above.
+  const placed: { x: number; y: number; key: (typeof keys)[number] }[] = [];
+  let rowY = y;
+  for (const key of keys) {
+    const width = 15 + ctx.measureText(key.label).width;
+    if (x + width > LEGEND_RIGHT && x > 16) {
+      rowY -= 18;
+      x = 16;
+    }
+    placed.push({ x, y: rowY, key });
+    x += width + 18;
+  }
+  for (const p of placed) {
+    p.key.draw(p.x, p.y);
+    ctx.fillStyle = TEXT_MUTED;
+    ctx.fillText(p.key.label, p.x + 15, p.y);
   }
 }
 
@@ -276,6 +393,9 @@ export function renderGasScene(
   if (snap.mode === "box") {
     drawBox(ctx);
   } else {
+    if (snap.wind.field) {
+      drawField(ctx, snap);
+    }
     if (options.showGravity) {
       drawGravityArrows(ctx, snap);
     }
@@ -283,6 +403,9 @@ export function renderGasScene(
   }
   if (options.showTrail) {
     drawTrail(ctx, snap);
+  }
+  if (snap.wind.count > 0) {
+    drawWind(ctx, snap);
   }
   drawParticles(ctx, snap);
   if (options.showTrail) {
