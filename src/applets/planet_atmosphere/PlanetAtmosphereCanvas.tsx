@@ -72,10 +72,11 @@ const TIP = {
   histogramPlanet:
     "Speeds of the gas near the ground; bars use the particle colours.\nLine: the spread expected at the measured temperature.\nShaded: faster than escape speed.",
   solarWind: "A stream of fast, light, charged particles from the Sun, arriving from the left.",
-  windSpeed: "Speed of the incoming wind, in the same units as the escape speed.",
-  windDensity: "How much wind arrives (number of wind particles).",
+  windSpeed: "Speed of the incoming wind, in the same units as the escape speed. A faster wind squeezes the field's bubble.",
+  windDensity: "How much wind arrives (number of wind particles). A denser wind squeezes the field's bubble.",
   field: "The planet's magnetic field. It steers the charged wind; the neutral gas ignores it.",
-  fieldStrength: "Stronger field → the wind turns away farther from the planet.",
+  fieldStrength: "Stronger field → a bigger bubble, so the wind turns away farther from the planet.",
+  zoom: "Look from closer or further away. The physics is the same.",
   evaporated: "Escaped without being hit by the wind: heat alone.",
   stripped: "Escaped after being hit by the solar wind (since it last touched the ground)."
 } as const;
@@ -92,6 +93,10 @@ const WIND_PRESET_BUTTONS: { id: WindPresetId; label: string; tip: string }[] = 
   { id: "earth", label: "Earth", tip: "Earth-like: heavy planet (2×) with a magnetic field, solar wind on." },
   { id: "earth_no_field", label: "Earth, no field", tip: "The Earth-like planet with its magnetic field switched off." }
 ];
+
+/** The zoom slider moves in powers of two, from 4× further away to 2× closer. */
+const ZOOM_LOG_MIN = -2;
+const ZOOM_LOG_MAX = 1;
 
 const PLAYBACK_OPTIONS = [
   { value: 0.5, label: "½×" },
@@ -130,6 +135,7 @@ export function PlanetAtmosphereCanvas({ host }: Props): JSX.Element {
   const [paused, setPaused] = useState(false);
   const [showTrail, setShowTrail] = useState(false);
   const [showGravity, setShowGravity] = useState(true);
+  const [zoom, setZoom] = useState(1);
   const [stats, setStats] = useState<GasStats | null>(null);
 
   const sim = useMemo(
@@ -158,6 +164,10 @@ export function PlanetAtmosphereCanvas({ host }: Props): JSX.Element {
   }, [playback, sim]);
 
   useEffect(() => {
+    sim.setZoom(zoom);
+  }, [zoom, sim]);
+
+  useEffect(() => {
     const sctx = sceneRef.current?.getContext("2d");
     const hctx = histRef.current?.getContext("2d");
     if (!sctx || !hctx) {
@@ -173,7 +183,7 @@ export function PlanetAtmosphereCanvas({ host }: Props): JSX.Element {
         sim.step(dt);
       }
       const snap = sim.getSnapshot();
-      renderGasScene(sctx, snap, { showTrail, showGravity });
+      renderGasScene(sctx, snap, { showTrail, showGravity, zoom });
       renderSpeedHistogram(hctx, snap);
       // Text readouts refresh a few times per second; canvases redraw every frame.
       if (time - lastReadout > 150) {
@@ -184,7 +194,7 @@ export function PlanetAtmosphereCanvas({ host }: Props): JSX.Element {
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [moving, showGravity, showTrail, sim]);
+  }, [moving, showGravity, showTrail, sim, zoom]);
 
   // Before Start, setting changes rebuild a settled starting gas; afterwards they act on the live gas.
   function onModeChange(next: GasMode): void {
@@ -329,6 +339,18 @@ export function PlanetAtmosphereCanvas({ host }: Props): JSX.Element {
           onChange={onPlanetMassChange}
         />
       ) : null}
+      {planet ? (
+        <StageSlider
+          label="Zoom"
+          display={`${zoom < 1 ? zoom.toFixed(2) : zoom.toFixed(1)}×`}
+          value={Math.log2(zoom)}
+          min={ZOOM_LOG_MIN}
+          max={ZOOM_LOG_MAX}
+          step={0.05}
+          tip={TIP.zoom}
+          onChange={(v) => setZoom(2 ** v)}
+        />
+      ) : null}
       <StagePills>
         {planet ? <StageToggle label="Warm ground" on={warmGround} tip={TIP.warmGround} onChange={onWarmGroundChange} /> : null}
         <StageToggle label="Follow" on={showTrail} tip={TIP.trail} onChange={setShowTrail} />
@@ -465,10 +487,16 @@ export function PlanetAtmosphereCanvas({ host }: Props): JSX.Element {
           <h4>Solar wind</h4>
           <ul>
             <li>Violet streaks: wind particles, 10× lighter than the gas and much faster. A hit can knock a gas particle up and away.</li>
+            <li>Green: wind while the magnetic field is bending its path.</li>
             <li>
-              Magnetic field: we look down on the planet from above its pole, so the field points out of the screen. It turns the
-              charged wind aside; half the wind is positive and half negative, and the two curve opposite ways. The neutral gas
-              ignores it.
+              Aurora: some wind slips in near the poles and slides down the field lines. Where it hits the upper air, the air
+              glows. We see the pole at the middle of the disk, so it lands on the planet. The toy sends about 1 in 8 particles
+              that reach the bubble's Sun-facing edge down a field line, rather than following that path in 3D.
+            </li>
+            <li>
+              Magnetic field: we look down on the planet from above its pole, so the field points out of the screen. The wind
+              squeezes it into a bubble with a blunt nose facing the Sun and a tail behind; outside the bubble there is none. It
+              turns the charged wind aside (half positive, half negative, curving opposite ways); the neutral gas ignores it.
             </li>
             <li>Stripped counts gas lost after a wind hit; evaporated counts gas lost to heat alone.</li>
           </ul>
@@ -481,8 +509,8 @@ export function PlanetAtmosphereCanvas({ host }: Props): JSX.Element {
         {planet ? (
           <>
             <li>
-              Each wind particle is steered by the field on its own. In a real magnetosphere the wind also squeezes the field, into
-              a blunt nose on the Sun side and a long tail behind.
+              The bubble's shape is a standard magnetopause outline, and its size comes from balancing the field's pressure
+              against the wind's push. Each wind particle is then steered by that field on its own.
             </li>
             <li>
               Knock-outs stand in for several ways the wind removes air. At Mars today most of the loss is gas that is ionised and

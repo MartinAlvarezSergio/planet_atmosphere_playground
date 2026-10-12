@@ -91,14 +91,25 @@ export type WindSnapshot = {
   y: Float64Array;
   vx: Float64Array;
   vy: Float64Array;
+  /** 1 while the magnetic field is bending the particle's path. */
+  bent: Uint8Array;
   /** Recent positions, newest first, WIND_TRAIL_POINTS per particle; trailLength[i] are valid. */
   trailX: Float32Array;
   trailY: Float32Array;
+  /** Per trail point: 1 if the field was bending the particle there. */
+  trailBent: Uint8Array;
   trailLength: Uint8Array;
   particleRadius: number;
   on: boolean;
+  speed: number;
+  density: number;
   field: boolean;
   fieldStrength: number;
-  /** No incoming charge gets closer than this to the planet's centre (0 with the field off). */
-  shieldRadius: number;
+  /** Distance from the planet's centre to the nose of the field's bubble (0 with the field off). */
+  nose: number;
+  /** Aurora: where slipped-in wind reached the upper air near the pole, and how long ago (sim seconds). */
+  auroraCount: number;
+  auroraX: Float32Array;
+  auroraY: Float32Array;
+  auroraAge: Float32Array;
 };

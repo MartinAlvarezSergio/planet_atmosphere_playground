@@ -1,7 +1,7 @@
 import { setLogicalTransform } from "../../core/canvasScale";
 import { BOX_H, BOX_W, CANVAS_H, CANVAS_W, NEAR_GROUND_R, PX_PER_UNIT } from "./sim";
 import type { GasSnapshot } from "./types";
-import { WIND_TRAIL_POINTS } from "./wind";
+import { AURORA_FADE, fieldAt, fieldModel, WIND_TRAIL_POINTS } from "./wind";
 
 /** Logical size of the histogram overlay (CSS pixels); the backing store follows devicePixelRatio. */
 export const HIST_W = 300;
@@ -10,6 +10,8 @@ export const HIST_H = 170;
 type SceneOptions = {
   showTrail: boolean;
   showGravity: boolean;
+  /** Planet mode: 1 shows the standard frame; below 1 looks from further away. */
+  zoom: number;
 };
 
 /**
@@ -34,6 +36,13 @@ const GRAVITY = "rgba(150, 178, 210, 0.55)";
 const WIND = "#b9a2ff";
 const WIND_RGB = "185, 162, 255";
 const WIND_TAIL = `rgba(${WIND_RGB}, 0.45)`;
+/** Wind while the magnetic field bends it: aurora-like green, apart from the cyan escape ring. */
+const TURNED = "#7dffaa";
+const TURNED_RGB = "125, 255, 170";
+/** Auroral green (oxygen's 558 nm line). */
+const AURORA_RGB = "150, 255, 140";
+/** Violet trails show only the newest points; green trails use all WIND_TRAIL_POINTS. */
+const VIOLET_TRAIL_POINTS = 14;
 const FIELD_RGB = "110, 150, 255";
 const FONT_SMALL = "11px system-ui, sans-serif";
 
@@ -63,13 +72,19 @@ function speedBucket(speed: number): number {
   return Math.min(LUT_SIZE - 1, Math.max(0, Math.round((speed / COLOR_SPEED_MAX) * (LUT_SIZE - 1))));
 }
 
+/** Pixels per world unit for the frame being drawn: PX_PER_UNIT times the zoom. */
+let scale = PX_PER_UNIT;
+
 function toPx(x: number): number {
-  return CANVAS_W / 2 + x * PX_PER_UNIT;
+  return CANVAS_W / 2 + x * scale;
 }
 
 function toPy(y: number): number {
-  return CANVAS_H / 2 - y * PX_PER_UNIT;
+  return CANVAS_H / 2 - y * scale;
 }
+
+/** Disks stay at least this big on screen when zoomed out. */
+const MIN_DOT_PX = 1.2;
 
 function drawArrow(
   ctx: CanvasRenderingContext2D,
@@ -110,9 +125,9 @@ function drawBox(ctx: CanvasRenderingContext2D): void {
 }
 
 function drawGravityArrows(ctx: CanvasRenderingContext2D, snap: GasSnapshot): void {
-  const ringR = 2 * snap.planetRadius * PX_PER_UNIT;
+  const ringR = 2 * snap.planetRadius * scale;
   // Length ∝ g at the ring, so it scales with planet mass only (the ring is fixed).
-  const len = 22 * snap.planetMass;
+  const len = 22 * snap.planetMass * (scale / PX_PER_UNIT);
   const cx = toPx(0);
   const cy = toPy(0);
   for (let k = 0; k < 12; k++) {
@@ -123,78 +138,238 @@ function drawGravityArrows(ctx: CanvasRenderingContext2D, snap: GasSnapshot): vo
   }
 }
 
-/** Glow ∝ field strength, which falls off as 1/r³; it fades to nothing well outside the shielded radius. */
+/** The field glow is computed at this fraction of the canvas resolution and scaled up smoothly. */
+const FIELD_SAMPLE = 4;
+let fieldLayer: HTMLCanvasElement | null = null;
+let fieldLayerKey = "";
+
+/**
+ * Glow from the field the wind actually feels: brightest near the planet, a blunt edge facing the
+ * Sun, and a faint tail behind. Brightness grows as a gentle power of the strength, so the weak
+ * tail still shows.
+ */
 function drawField(ctx: CanvasRenderingContext2D, snap: GasSnapshot): void {
-  const shield = snap.wind.shieldRadius;
-  const R = snap.planetRadius;
-  const outer = Math.max(2.6 * shield, 1.5 * R);
-  const cx = toPx(0);
-  const cy = toPy(0);
-  const g = ctx.createRadialGradient(cx, cy, R * PX_PER_UNIT, cx, cy, outer * PX_PER_UNIT);
-  const stops = 12;
-  for (let k = 0; k <= stops; k++) {
-    const rad = R + ((outer - R) * k) / stops;
-    const a = k === stops ? 0 : 0.32 * Math.min(1, 0.5 * (shield / rad) ** 3);
-    g.addColorStop(k / stops, `rgba(${FIELD_RGB}, ${a.toFixed(3)})`);
+  const w = snap.wind;
+  const model = fieldModel(
+    { on: w.on, speed: w.speed, density: w.density, field: true, fieldStrength: w.fieldStrength },
+    snap.planetRadius
+  );
+  if (!model) {
+    return;
   }
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.arc(cx, cy, outer * PX_PER_UNIT, 0, Math.PI * 2);
-  ctx.fill();
+  const cols = Math.ceil(CANVAS_W / FIELD_SAMPLE);
+  const rows = Math.ceil(CANVAS_H / FIELD_SAMPLE);
+  if (!fieldLayer) {
+    fieldLayer = document.createElement("canvas");
+    fieldLayer.width = cols;
+    fieldLayer.height = rows;
+  }
+  const key = `${scale}|${model.nose}|${model.omegaSurface}`;
+  const lctx = fieldLayer.getContext("2d");
+  if (!lctx) {
+    return;
+  }
+  if (key !== fieldLayerKey) {
+    fieldLayerKey = key;
+    const image = lctx.createImageData(cols, rows);
+    // Just inside the nose: the planet's field there, doubled by the edge currents.
+    const atNose = (2 * model.omegaSurface * model.planetR ** 3) / model.nose ** 3;
+    for (let j = 0; j < rows; j++) {
+      const wy = (CANVAS_H / 2 - (j + 0.5) * FIELD_SAMPLE) / scale;
+      for (let i = 0; i < cols; i++) {
+        const wx = ((i + 0.5) * FIELD_SAMPLE - CANVAS_W / 2) / scale;
+        const om = fieldAt(model, wx, wy);
+        const k = 4 * (j * cols + i);
+        image.data[k] = 110;
+        image.data[k + 1] = 150;
+        image.data[k + 2] = 255;
+        image.data[k + 3] = om > 0 ? Math.round(255 * Math.min(0.34, 0.24 * (om / atNose) ** 0.35)) : 0;
+      }
+    }
+    lctx.putImageData(image, 0, 0);
+  }
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "low";
+  ctx.drawImage(fieldLayer, 0, 0, cols * FIELD_SAMPLE, rows * FIELD_SAMPLE);
+  ctx.restore();
 }
 
-/** Each wind particle trails its actual recent path, fading with age, so the flow's curves show. */
+let windInView = new Int32Array(0);
+
+/** Soft glow under bent wind: drawn small, then scaled up, which blurs it (two sizes for a bloom). */
+const GLOW_SAMPLES = [4, 10];
+const glowLayers: { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D }[] = [];
+
+function glowLayer(k: number): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } | null {
+  if (!glowLayers[k]) {
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.ceil(CANVAS_W / GLOW_SAMPLES[k]);
+    canvas.height = Math.ceil(CANVAS_H / GLOW_SAMPLES[k]);
+    const gctx = canvas.getContext("2d");
+    if (!gctx) {
+      return null;
+    }
+    glowLayers[k] = { canvas, ctx: gctx };
+  }
+  return glowLayers[k];
+}
+
+/**
+ * Each wind particle trails its actual recent path, fading with age, so the flow's curves show.
+ * While the magnetic field bends a particle it glows green, and so does that stretch of its trail,
+ * which lingers twice as long as the violet parts.
+ */
 function drawWind(ctx: CanvasRenderingContext2D, snap: GasSnapshot): void {
   const w = snap.wind;
-  const rpx = Math.max(1.6, w.particleRadius * PX_PER_UNIT);
-  const margin = 240;
-  const inView = (px: number, py: number): boolean =>
-    px > -margin && py > -margin && px < CANVAS_W + margin && py < CANVAS_H + margin;
-  ctx.lineWidth = 1.6;
-  ctx.lineCap = "round";
-  // One path per trail segment age: the newest segment is the most opaque.
-  for (let k = 0; k < WIND_TRAIL_POINTS - 1; k++) {
-    ctx.strokeStyle = `rgba(${WIND_RGB}, ${(0.7 * (1 - k / (WIND_TRAIL_POINTS - 1))).toFixed(3)})`;
-    ctx.beginPath();
-    for (let i = 0; i < w.count; i++) {
-      if (w.trailLength[i] < k + 2) {
-        continue;
-      }
-      const base = i * WIND_TRAIL_POINTS + k;
-      const ax = toPx(k === 0 ? w.x[i] : w.trailX[base]);
-      const ay = toPy(k === 0 ? w.y[i] : w.trailY[base]);
-      if (!inView(ax, ay)) {
-        continue;
-      }
-      ctx.moveTo(ax, ay);
-      ctx.lineTo(toPx(w.trailX[base + 1]), toPy(w.trailY[base + 1]));
-    }
-    ctx.stroke();
+  const rpx = Math.max(1.6, w.particleRadius * scale);
+  const margin = 320;
+  if (windInView.length < w.count) {
+    windInView = new Int32Array(w.count);
   }
-  ctx.fillStyle = WIND;
-  ctx.beginPath();
+  let m = 0;
+  let anyTurned = false;
   for (let i = 0; i < w.count; i++) {
     const px = toPx(w.x[i]);
     const py = toPy(w.y[i]);
-    if (!inView(px, py)) {
-      continue;
+    if (px > -margin && py > -margin && px < CANVAS_W + margin && py < CANVAS_H + margin) {
+      windInView[m++] = i;
+      for (let k = 0; !anyTurned && k < WIND_TRAIL_POINTS; k++) {
+        anyTurned = (k === 0 ? w.bent[i] : w.trailBent[i * WIND_TRAIL_POINTS + k]) === 1;
+      }
     }
-    ctx.moveTo(px + rpx, py);
-    ctx.arc(px, py, rpx, 0, Math.PI * 2);
   }
-  ctx.fill();
+
+  // Zoomed out, trail points sit only a few pixels apart: join every stride-th one instead.
+  const stride = scale < PX_PER_UNIT * 0.4 ? 3 : scale < PX_PER_UNIT * 0.75 ? 2 : 1;
+  // Segment k joins trail point k (newer; point 0 is the particle itself) to point k + stride.
+  const segment = (c: CanvasRenderingContext2D, i: number, k: number): void => {
+    const base = i * WIND_TRAIL_POINTS;
+    c.moveTo(toPx(k === 0 ? w.x[i] : w.trailX[base + k]), toPy(k === 0 ? w.y[i] : w.trailY[base + k]));
+    c.lineTo(toPx(w.trailX[base + k + stride]), toPy(w.trailY[base + k + stride]));
+  };
+  const isTurned = (i: number, k: number): boolean =>
+    k === 0 ? w.bent[i] === 1 : w.trailBent[i * WIND_TRAIL_POINTS + k] === 1;
+  const strokeAges = (
+    c: CanvasRenderingContext2D,
+    turnedPart: boolean,
+    points: number,
+    width: number,
+    alpha: number,
+    rgb: string
+  ): void => {
+    c.lineWidth = width;
+    for (let k = 0; k + stride < points; k += stride) {
+      c.strokeStyle = `rgba(${rgb}, ${(alpha * (1 - k / (points - 1))).toFixed(3)})`;
+      c.beginPath();
+      for (let j = 0; j < m; j++) {
+        const i = windInView[j];
+        if (w.trailLength[i] > k + stride && isTurned(i, k) === turnedPart) {
+          segment(c, i, k);
+        }
+      }
+      c.stroke();
+    }
+  };
+
+  // Butt ends: round ones overlap at every joint and show as beads.
+  ctx.lineCap = "butt";
+  ctx.lineJoin = "round";
+  strokeAges(ctx, false, VIOLET_TRAIL_POINTS, 1.6, 0.7, WIND_RGB);
+
+  if (anyTurned) {
+    for (let g = 0; g < GLOW_SAMPLES.length; g++) {
+      const layer = glowLayer(g);
+      if (!layer) {
+        continue;
+      }
+      const gc = layer.ctx;
+      gc.setTransform(1, 0, 0, 1, 0, 0);
+      gc.clearRect(0, 0, layer.canvas.width, layer.canvas.height);
+      gc.setTransform(1 / GLOW_SAMPLES[g], 0, 0, 1 / GLOW_SAMPLES[g], 0, 0);
+      gc.globalCompositeOperation = "lighter";
+      gc.lineCap = "round";
+      gc.lineJoin = "round";
+      // Faint per trail, so overlapping trails add up to a soft haze rather than white.
+      const zoomFit = Math.sqrt(Math.min(1, scale / PX_PER_UNIT));
+      strokeAges(gc, true, WIND_TRAIL_POINTS, (6 + 1.6 * GLOW_SAMPLES[g]) * zoomFit, g === 0 ? 0.11 : 0.07, TURNED_RGB);
+      gc.fillStyle = `rgba(${TURNED_RGB}, 0.16)`;
+      gc.beginPath();
+      for (let j = 0; j < m; j++) {
+        const i = windInView[j];
+        if (w.bent[i]) {
+          const px = toPx(w.x[i]);
+          const py = toPy(w.y[i]);
+          const r = (4 + GLOW_SAMPLES[g]) * zoomFit;
+          gc.moveTo(px + r, py);
+          gc.arc(px, py, r, 0, Math.PI * 2);
+        }
+      }
+      gc.fill();
+    }
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "low";
+    for (let g = 0; g < glowLayers.length; g++) {
+      const layer = glowLayers[g];
+      ctx.drawImage(layer.canvas, 0, 0, layer.canvas.width * GLOW_SAMPLES[g], layer.canvas.height * GLOW_SAMPLES[g]);
+    }
+    strokeAges(ctx, true, WIND_TRAIL_POINTS, 1.7, 0.8, TURNED_RGB);
+    ctx.restore();
+  }
+
+  for (const turnedPart of [false, true]) {
+    ctx.fillStyle = turnedPart ? TURNED : WIND;
+    ctx.beginPath();
+    for (let j = 0; j < m; j++) {
+      const i = windInView[j];
+      if ((w.bent[i] === 1) !== turnedPart) {
+        continue;
+      }
+      const px = toPx(w.x[i]);
+      const py = toPy(w.y[i]);
+      ctx.moveTo(px + rpx, py);
+      ctx.arc(px, py, rpx, 0, Math.PI * 2);
+    }
+    ctx.fill();
+  }
+}
+
+/**
+ * Aurora: soft green glows on the disk (seen from above the pole) where slipped-in wind reached the
+ * upper air, fading over about a second.
+ */
+function drawAurora(ctx: CanvasRenderingContext2D, snap: GasSnapshot): void {
+  const w = snap.wind;
+  const radius = Math.max(5, 0.16 * snap.planetRadius * scale);
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  for (let k = 0; k < w.auroraCount; k++) {
+    const glow = 0.45 * Math.exp(-w.auroraAge[k] / AURORA_FADE);
+    const px = toPx(w.auroraX[k]);
+    const py = toPy(w.auroraY[k]);
+    const g = ctx.createRadialGradient(px, py, 0, px, py, radius);
+    g.addColorStop(0, `rgba(${AURORA_RGB}, ${glow.toFixed(3)})`);
+    g.addColorStop(1, `rgba(${AURORA_RGB}, 0)`);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(px, py, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
 }
 
 function drawPlanet(ctx: CanvasRenderingContext2D, snap: GasSnapshot): void {
   const cx = toPx(0);
   const cy = toPy(0);
-  const rpx = snap.planetRadius * PX_PER_UNIT;
+  const rpx = snap.planetRadius * scale;
 
   // Faint ring: the layer whose speeds feed the temperature readout and histogram.
   ctx.strokeStyle = HAIRLINE;
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.arc(cx, cy, NEAR_GROUND_R * PX_PER_UNIT, 0, Math.PI * 2);
+  ctx.arc(cx, cy, NEAR_GROUND_R * scale, 0, Math.PI * 2);
   ctx.stroke();
 
   const g = ctx.createRadialGradient(cx - rpx * 0.35, cy - rpx * 0.35, rpx * 0.1, cx, cy, rpx);
@@ -227,7 +402,7 @@ function drawTrail(ctx: CanvasRenderingContext2D, snap: GasSnapshot): void {
 let bucketScratch = new Uint8Array(0);
 
 function drawParticles(ctx: CanvasRenderingContext2D, snap: GasSnapshot): void {
-  const rpx = snap.particleRadius * PX_PER_UNIT;
+  const rpx = Math.max(MIN_DOT_PX, snap.particleRadius * scale);
   const n = snap.count;
   const used = new Uint8Array(LUT_SIZE);
   if (bucketScratch.length < n) {
@@ -282,7 +457,7 @@ function drawTracer(ctx: CanvasRenderingContext2D, snap: GasSnapshot): void {
   if (i < 0) {
     return;
   }
-  const rpx = snap.particleRadius * PX_PER_UNIT;
+  const rpx = Math.max(MIN_DOT_PX, snap.particleRadius * scale);
   ctx.strokeStyle = "#ffffff";
   ctx.lineWidth = 1.6;
   ctx.beginPath();
@@ -345,6 +520,40 @@ function drawLegend(ctx: CanvasRenderingContext2D, snap: GasSnapshot, showTrail:
       }
     });
   }
+  if (snap.wind.field && (snap.wind.on || snap.wind.count > 0)) {
+    keys.push({
+      label: "bent by the field",
+      draw: (kx, ky) => {
+        ctx.strokeStyle = `rgba(${TURNED_RGB}, 0.35)`;
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.moveTo(kx - 3, ky);
+        ctx.lineTo(kx + 8, ky);
+        ctx.stroke();
+        ctx.strokeStyle = TURNED;
+        ctx.lineWidth = 1.6;
+        ctx.stroke();
+        ctx.fillStyle = TURNED;
+        ctx.beginPath();
+        ctx.arc(kx + 9, ky, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+  }
+  if (snap.wind.auroraCount > 0) {
+    keys.push({
+      label: "aurora",
+      draw: (kx, ky) => {
+        const g = ctx.createRadialGradient(kx + 5, ky, 0, kx + 5, ky, 7);
+        g.addColorStop(0, `rgba(${AURORA_RGB}, 0.85)`);
+        g.addColorStop(1, `rgba(${AURORA_RGB}, 0)`);
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(kx + 5, ky, 7, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+  }
   if (snap.wind.field) {
     keys.push({
       label: "magnetic field",
@@ -384,6 +593,7 @@ export function renderGasScene(
   options: SceneOptions
 ): void {
   setLogicalTransform(ctx, CANVAS_W);
+  scale = snap.mode === "planet" ? PX_PER_UNIT * options.zoom : PX_PER_UNIT;
   const bg = ctx.createLinearGradient(0, 0, 0, CANVAS_H);
   bg.addColorStop(0, SURFACE_TOP);
   bg.addColorStop(1, SURFACE_BOTTOM);
@@ -400,6 +610,9 @@ export function renderGasScene(
       drawGravityArrows(ctx, snap);
     }
     drawPlanet(ctx, snap);
+    if (snap.wind.auroraCount > 0) {
+      drawAurora(ctx, snap);
+    }
   }
   if (options.showTrail) {
     drawTrail(ctx, snap);

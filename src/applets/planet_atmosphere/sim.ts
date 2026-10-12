@@ -2,7 +2,7 @@ import { gaussian, mulberry32 } from "./random";
 import type { GasMode, GasSettings, GasSnapshot, PlanetPresetId, TrailPoint, WindPresetId, WindSettings } from "./types";
 import {
   createSolarWind,
-  shieldRadius,
+  noseDistance,
   WIND_DEFAULTS,
   WIND_HIT_DISTANCE,
   WIND_MASS,
@@ -139,6 +139,8 @@ export type GasSim = {
   setPlanetMass: (planetMass: number) => void;
   setWarmGround: (warmGround: boolean) => void;
   setWind: (wind: WindSettings) => void;
+  /** Planet mode: how far out the screen shows (1 = the standard frame). Escapes and the wind follow it. */
+  setZoom: (zoom: number) => void;
   setPlayback: (playback: number) => void;
   getSnapshot: () => GasSnapshot;
 };
@@ -173,6 +175,9 @@ export function createGasSim(initial: GasSettings): GasSim {
   let nextId = 0;
   let playback = 1;
   let simTime = 0;
+  /** Gas counts as escaped past this box: the frame, or the zoomed-out view if larger. */
+  let escapeHalfW = VIEW_HALF_W;
+  let escapeHalfH = VIEW_HALF_H;
   let evaporated = 0;
   let stripped = 0;
   let tracerEscaped = false;
@@ -470,7 +475,8 @@ export function createGasSim(initial: GasSettings): GasSim {
     const wvx = wind.vx;
     const wvy = wind.vy;
     for (let k = 0; k < wind.count; k++) {
-      if (!wind.near[k]) {
+      // Slipped-in particles have left this slice for the poles.
+      if (!wind.near[k] || wind.polar[k]) {
         continue;
       }
       const cx = Math.floor((wx[k] - x0) / cell);
@@ -603,7 +609,7 @@ export function createGasSim(initial: GasSettings): GasSim {
     for (let i = n - 1; i >= 0; i--) {
       const px = x[i];
       const py = y[i];
-      if (Math.abs(px) <= VIEW_HALF_W && Math.abs(py) <= VIEW_HALF_H) {
+      if (Math.abs(px) <= escapeHalfW && Math.abs(py) <= escapeHalfH) {
         continue;
       }
       const rad = Math.hypot(px, py);
@@ -807,6 +813,12 @@ export function createGasSim(initial: GasSettings): GasSim {
       wind.configure(settings.wind);
     },
 
+    setZoom(zoom: number): void {
+      escapeHalfW = Math.max(VIEW_HALF_W, VIEW_HALF_W / zoom);
+      escapeHalfH = Math.max(VIEW_HALF_H, VIEW_HALF_H / zoom);
+      wind.setView(escapeHalfW, escapeHalfH);
+    },
+
     setPlayback(value: number): void {
       playback = value;
     },
@@ -848,14 +860,22 @@ export function createGasSim(initial: GasSettings): GasSim {
           y: wind.y,
           vx: wind.vx,
           vy: wind.vy,
+          bent: wind.bent,
           trailX: wind.trailX,
           trailY: wind.trailY,
+          trailBent: wind.trailBent,
           trailLength: wind.trailLength,
           particleRadius: WIND_PARTICLE_R,
           on: planet && settings.wind.on,
+          speed: settings.wind.speed,
+          density: settings.wind.density,
           field: planet && settings.wind.field,
           fieldStrength: settings.wind.fieldStrength,
-          shieldRadius: planet ? shieldRadius(settings.wind, PLANET_R) : 0
+          nose: planet && settings.wind.field ? noseDistance(settings.wind, PLANET_R) : 0,
+          auroraCount: planet ? wind.auroraCount : 0,
+          auroraX: wind.auroraX,
+          auroraY: wind.auroraY,
+          auroraAge: wind.auroraAge
         },
         stats: {
           simTime,
